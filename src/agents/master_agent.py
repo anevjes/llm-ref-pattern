@@ -1,9 +1,12 @@
+import logging
 import os
 from typing import Annotated
 
 from agent_framework import Agent, tool
 from agent_framework.foundry import FoundryChatClient
 from pydantic import Field
+
+logger = logging.getLogger(__name__)
 
 MASTER_AGENT_INSTRUCTIONS = """You are a master orchestration agent for infrastructure-as-code workflows.
 
@@ -46,6 +49,24 @@ def create_master_agent(client: FoundryChatClient, infra_prep_agent: Agent) -> A
         )
 
         result = await infra_prep_agent.run(prompt)
+
+        # Log token usage from the inner infra_prep agent run
+        if result.usage_details:
+            usage = result.usage_details
+            logger.info(
+                "[InfraPrepAgent] Token usage — input: %s, output: %s, total: %s",
+                usage.get("input_token_count", "N/A"),
+                usage.get("output_token_count", "N/A"),
+                usage.get("total_token_count", "N/A"),
+            )
+            # Log any additional usage fields (e.g. cache, reasoning tokens)
+            extra_keys = [k for k in usage if k not in ("input_token_count", "output_token_count", "total_token_count")]
+            if extra_keys:
+                for k in extra_keys:
+                    logger.info("[InfraPrepAgent] Token usage detail — %s: %s", k, usage[k])
+        else:
+            logger.info("[InfraPrepAgent] Token usage: not available")
+
         return result.text
 
     return client.as_agent(
