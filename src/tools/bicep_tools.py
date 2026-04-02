@@ -392,3 +392,91 @@ def commit_bicep_chunks(
     finally:
         g.close()
         logger.info("[commit_bicep_chunks] GitHub connection closed.")
+
+
+# ---------------------------------------------------------------------------
+# Batched-mode tools
+# ---------------------------------------------------------------------------
+
+@tool(approval_mode="never_require")
+def get_bicep_chunks_batch(
+    indices: Annotated[str, Field(description="Comma-separated chunk indices to retrieve (e.g. '0,2,5,7').")],
+) -> str:
+    """Get the content of multiple Bicep chunks in a single call. Returns all requested chunks concatenated."""
+    if not _chunk_manager.chunks:
+        return "Error: No chunks loaded. Call read_bicep_structure first."
+
+    try:
+        index_list = [int(i.strip()) for i in indices.split(",")]
+    except ValueError:
+        return f"Error: Invalid indices format '{indices}'. Use comma-separated integers (e.g. '0,2,5,7')."
+
+    invalid = [i for i in index_list if i < 0 or i >= len(_chunk_manager.chunks)]
+    if invalid:
+        return f"Error: Invalid chunk indices {invalid}. Valid range: 0-{len(_chunk_manager.chunks) - 1}"
+
+    logger.info("[get_bicep_chunks_batch] Retrieving %d chunks: %s", len(index_list), index_list)
+    parts = []
+    total_lines = 0
+    for idx in index_list:
+        chunk = _chunk_manager.chunks[idx]
+        chunk_lines = chunk["end_line"] - chunk["start_line"] + 1
+        total_lines += chunk_lines
+        parts.append(
+            f"=== Chunk {idx} [{chunk['type']}] {chunk['name']} "
+            f"(lines {chunk['start_line']+1}-{chunk['end_line']+1}) ===\n"
+            f"{chunk['content']}\n"
+        )
+
+    logger.info("[get_bicep_chunks_batch] Returning %d chunks, %d total lines", len(index_list), total_lines)
+    return "\n".join(parts)
+
+
+@tool(approval_mode="never_require")
+def update_bicep_chunks_batch(
+    updates: Annotated[str, Field(
+        description=(
+            "JSON array of chunk updates. Each element is an object with 'index' (int) and 'content' (str). "
+            "Example: [{\"index\": 0, \"content\": \"modified content...\"}, {\"index\": 3, \"content\": \"...\"}]"
+        )
+    )],
+) -> str:
+    """Store modified content for multiple chunks in a single call. Expects a JSON array of {index, content} objects."""
+    import json
+
+    if not _chunk_manager.chunks:
+        return "Error: No chunks loaded. Call read_bicep_structure first."
+
+    try:
+        update_list = json.loads(updates)
+    except json.JSONDecodeError as e:
+        return f"Error: Invalid JSON: {e}"
+
+    if not isinstance(update_list, list):
+        return "Error: Expected a JSON array of {index, content} objects."
+
+    results = []
+    for item in update_list:
+        idx = item.get("index")
+        content = item.get("content")
+        if idx is None or content is None:
+            results.append(f"Skipped invalid entry (missing index or content): {item}")
+            continue
+        if idx < 0 or idx >= len(_chunk_manager.chunks):
+            results.append(f"Skipped chunk {idx}: index out of range (0-{len(_chunk_manager.chunks) - 1})")
+            continue
+
+        chunk = _chunk_manager.chunks[idx]
+        old_lines = chunk["content"].count("\n") + 1
+        new_lines = content.count("\n") + 1
+        _chunk_manager.modified[idx] = content
+        results.append(f"Chunk {idx} [{chunk['type']}] {chunk['name']}: updated ({old_lines} -> {new_lines} lines)")
+
+    logger.info("[update_bicep_chunks_batch] Updated %d chunks, %d modified total",
+                 len(update_list), len(_chunk_manager.modified))
+    return (
+        f"Batch update complete:\n"
+        + "\n".join(f"  {r}" for r in results)
+        + f"\n\nModified chunks: {len(_chunk_manager.modified)}/{len(_chunk_manager.chunks)}. "
+        f"Call commit_bicep_chunks when all modifications are done."
+    )

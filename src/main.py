@@ -8,7 +8,7 @@ from agent_framework.foundry import FoundryChatClient
 from azure.identity import AzureCliCredential
 from dotenv import load_dotenv
 
-from agents.infra_prep_agent import create_infra_prep_agent
+from agents.infra_prep_agent import create_infra_prep_agent, create_isolated_agents
 from agents.master_agent import create_master_agent
 
 logging.basicConfig(
@@ -46,9 +46,16 @@ async def main() -> None:
     logger.info("Creating InfraPrepAgent...")
     infra_prep_agent = create_infra_prep_agent(client)
 
+    # Create isolated agents if in isolated_batched mode
+    mode = os.environ.get("BICEP_PROCESSING_MODE", "full").lower()
+    isolated_agents = None
+    if mode == "isolated_batched":
+        logger.info("Creating isolated sub-agents for isolated_batched mode...")
+        isolated_agents = create_isolated_agents(client)
+
     # Create the master orchestrator agent (with infra_prep as a tool)
     logger.info("Creating MasterOrchestratorAgent...")
-    master_agent = create_master_agent(client, infra_prep_agent)
+    master_agent = create_master_agent(client, infra_prep_agent, isolated_agents=isolated_agents)
 
     # Run the master agent with a sample prompt
     user_prompt = (
