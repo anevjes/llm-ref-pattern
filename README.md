@@ -347,16 +347,3 @@ The system provides verbose logging at every stage:
 
 ---
 
-## Best Practices Applied
-
-The InfraPrepAgent applies these Azure Bicep best practices:
-
-| Rule | Description |
-|---|---|
-| **Tags** | All resources get `Environment`, `Project`, `ManagedBy`, `LastDeployed` tags |
-| **Diagnostics** | Diagnostic settings enabled for supported resources (logs to Log Analytics) |
-| **Naming** | Cloud Adoption Framework (CAF) pattern: `{prefix}-{workload}-{env}` |
-| **Comments** | Section comments added to each resource block |
-| **Secure params** | `@secure()` decorator on sensitive parameters |
-| **Storage** | `allowBlobPublicAccess: false`, `minimumTlsVersion: 'TLS1_2'` |
-| **Key Vault** | `enableRbacAuthorization: true`, `enablePurgeProtection: true` |
